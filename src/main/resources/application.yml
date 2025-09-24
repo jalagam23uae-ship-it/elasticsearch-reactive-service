@@ -1,0 +1,129 @@
+# Main Application Configuration
+spring:
+  # Enable virtual threads
+  threads:
+    virtual:
+      enabled: true
+
+  # Jackson configuration
+  jackson:
+    default-property-inclusion: NON_NULL
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+  # Application configuration
+  application:
+    name: elasticsearch-reactive-service
+
+  # Spring Data Elasticsearch reactive client configuration
+  elasticsearch:
+    # Use explicit URIs if provided, otherwise build from app.elasticsearch.*
+    uris: ${SPRING_ELASTICSEARCH_URIS:${app.elasticsearch.scheme}://${app.elasticsearch.host}:${app.elasticsearch.port}}
+    username: ${SPRING_ELASTICSEARCH_USERNAME:${app.elasticsearch.username}}
+    password: ${SPRING_ELASTICSEARCH_PASSWORD:${app.elasticsearch.password}}
+
+# Server configuration
+server:
+  port: 8080
+
+# Custom Elasticsearch configuration
+app:
+  elasticsearch:
+    host: ${ELASTICSEARCH_HOST:192.168.1.27}
+    port: ${ELASTICSEARCH_PORT:9200}
+    scheme: ${ELASTICSEARCH_SCHEME:http}
+    username: ${ELASTICSEARCH_USERNAME:}
+    password: ${ELASTICSEARCH_PASSWORD:}
+    
+    # Default search configuration
+    default-page-size: 20
+    max-page-size: 100
+    default-timeout: 30s
+    
+    # Virtual thread pool configuration
+    virtual-threads:
+      enabled: true
+      core-pool-size: 10
+      max-pool-size: 1000
+      
+    # Reactive configuration
+    reactive:
+      buffer-size: 1000
+      prefetch: 256
+
+# Logging configuration
+logging:
+  level:
+    com.microservices.elasticsearch.dynamic.query: INFO
+    co.elastic.clients: INFO
+    reactor.netty: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# Management endpoints (for monitoring)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+---
+# Development profile
+spring:
+  config:
+    activate:
+      on-profile: dev
+      
+app:
+  elasticsearch:
+    host: 192.168.1.27
+    port: 9200
+    scheme: http
+    
+logging:
+  level:
+    root: INFO
+    com.microservices.elasticsearch.dynamic.query: DEBUG
+
+---
+# Production profile
+spring:
+  config:
+    activate:
+      on-profile: prod
+      
+app:
+  elasticsearch:
+    host: ${ELASTICSEARCH_HOST}
+    port: ${ELASTICSEARCH_PORT:9200}
+    scheme: ${ELASTICSEARCH_SCHEME:https}
+    username: ${ELASTICSEARCH_USERNAME}
+    password: ${ELASTICSEARCH_PASSWORD}
+    
+logging:
+  level:
+    root: WARN
+    com.microservices.elasticsearch.dynamic.query: INFO
+
+---
+# Test profile
+spring:
+  config:
+    activate:
+      on-profile: test
+      
+app:
+  elasticsearch:
+    host: localhost
+    port: 9201
+    scheme: http
+    
+logging:
+  level:
+    root: ERROR
+    com.microservices.elasticsearch.dynamic.query: DEBUG
