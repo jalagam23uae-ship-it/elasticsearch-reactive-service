@@ -1,6 +1,7 @@
 package com.microservices.elasticsearch.dynamic.query.dto;
 
 import java.util.List;
+import java.util.Map;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -18,18 +19,20 @@ import lombok.NoArgsConstructor;
 public class QueryGroup {
     @NotBlank
     private String operator; // AND, OR, NOT
-    
+
+    // Allow either conditions or inline sub-groups inside conditions[] by accepting maps
     @Valid
-    private List<QueryCondition> conditions;
-    
+    private List<Map<String, Object>> conditions;
+
     @Valid
     private List<QueryGroup> groups;
-    
+
     @JsonProperty("nested_path")
     private String nestedPath;
-    
+
+    // Also accept "has_child" from payload; mapping handled in builder
     @JsonProperty("has_child_type")
     private String hasChildType;
-    
+
     private Boolean negate;
 }

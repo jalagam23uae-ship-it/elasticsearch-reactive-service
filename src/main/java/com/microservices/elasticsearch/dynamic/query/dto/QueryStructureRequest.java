@@ -26,6 +26,9 @@ public class QueryStructureRequest {
     
     @JsonProperty("_source")
     private List<String> sourceFields;
+
+    @Valid
+    private List<SortSpec> sort;
 }
 
 

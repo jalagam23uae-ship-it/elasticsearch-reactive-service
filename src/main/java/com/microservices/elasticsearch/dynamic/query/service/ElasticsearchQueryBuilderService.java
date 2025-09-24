@@ -56,6 +56,24 @@ public class ElasticsearchQueryBuilderService {
         if (queryStructure.getSourceFields() != null && !queryStructure.getSourceFields().isEmpty()) {
             query.put("_source", queryStructure.getSourceFields());
         }
+
+        // Handle sort
+        if (queryStructure.getSort() != null && !queryStructure.getSort().isEmpty()) {
+            List<Map<String, Object>> sorts = new ArrayList<>();
+            queryStructure.getSort().forEach(s -> {
+                String field = s.getField();
+                if (field == null || field.isBlank()) {
+                    return; // ignore invalid sort entry without field
+                }
+                String order = Optional.ofNullable(s.getOrder()).orElse("asc").toLowerCase();
+                Map<String, Object> orderBody = new HashMap<>();
+                orderBody.put("order", order);
+                sorts.add(Map.of(field, orderBody));
+            });
+            if (!sorts.isEmpty()) {
+                query.put("sort", sorts);
+            }
+        }
         
         log.debug("Built Elasticsearch query: {}", query);
         return query;
@@ -162,11 +180,25 @@ public class ElasticsearchQueryBuilderService {
         String currentNestedPath = Optional.ofNullable(group.getNestedPath()).orElse(inheritedNestedPath);
         String isHasChild = group.getHasChildType();
         
-        // Process conditions
+        // Process conditions (can include inline sub-groups)
         if (group.getConditions() != null) {
-            group.getConditions().forEach(condition -> 
-                clauses.add(conditionToEs(condition))
-            );
+            group.getConditions().forEach(item -> {
+                if (item == null) return;
+                if (item.containsKey("field")) {
+                    // Treat as condition
+                    clauses.add(conditionMapToEs(item));
+                } else {
+                    // Treat as an inline subgroup
+                    QueryGroup sub = mapToQueryGroup(item);
+                    if (sub.getNestedPath() != null) {
+                        clauses.add(groupToEs(sub, sub.getNestedPath()));
+                    } else if (sub.getHasChildType() != null) {
+                        clauses.add(groupToEs(sub, sub.getHasChildType()));
+                    } else {
+                        clauses.add(groupToEs(sub, currentNestedPath));
+                    }
+                }
+            });
         }
         
         // Process subgroups
@@ -213,6 +245,52 @@ public class ElasticsearchQueryBuilderService {
         }
         
         return groupQuery;
+    }
+    
+    /**
+     * Build a QueryGroup object from a generic map to support inline groups inside conditions[]
+     */
+    private QueryGroup mapToQueryGroup(Map<String, Object> map) {
+        QueryGroup.QueryGroupBuilder builder = QueryGroup.builder();
+        builder.operator((String) map.getOrDefault("operator", "AND"));
+        // Support both has_child_type and has_child
+        Object hct = map.get("has_child_type");
+        if (hct == null) hct = map.get("has_child");
+        if (hct instanceof String s) builder.hasChildType(s);
+        Object np = map.get("nested_path");
+        if (np instanceof String s) builder.nestedPath(s);
+        Object negate = map.get("negate");
+        if (negate instanceof Boolean b) builder.negate(b);
+
+        // conditions
+        Object conds = map.get("conditions");
+        if (conds instanceof List<?> list) {
+            // Keep as raw maps for recursive handling
+            builder.conditions((List<Map<String, Object>>) (List<?>) list);
+        }
+        // groups
+        Object grps = map.get("groups");
+        if (grps instanceof List<?> list) {
+            builder.groups(((List<?>) list).stream()
+                    .filter(m -> m instanceof Map)
+                    .map(m -> mapToQueryGroup((Map<String, Object>) m))
+                    .toList());
+        }
+        return builder.build();
+    }
+
+    /**
+     * Convert a map-based condition to ES clause
+     */
+    private Map<String, Object> conditionMapToEs(Map<String, Object> cond) {
+        QueryCondition qc = QueryCondition.builder()
+                .field((String) cond.get("field"))
+                .operator((String) cond.get("operator"))
+                .value(cond.get("value"))
+                .boost(cond.get("boost") instanceof Number n ? n.doubleValue() : null)
+                .fieldType((String) cond.get("field_type"))
+                .build();
+        return conditionToEs(qc);
     }
     
     /**

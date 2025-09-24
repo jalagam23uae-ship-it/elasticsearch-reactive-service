@@ -25,6 +25,7 @@ import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.json.JsonData;
+import co.elastic.clients.elasticsearch._types.SortOrder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
@@ -169,6 +170,9 @@ public class ElasticsearchService {
                     searchBuilder.size((Integer) esQuery.get("size"));
                 }
 
+                // Apply sort options if present
+                applySorts(searchBuilder, esQuery);
+
                 SearchRequest searchRequest = searchBuilder.build();
                 SearchResponse<Map> response = elasticsearchClient.search(searchRequest, Map.class);
                 return convertToElasticsearchResponse(response);
@@ -202,12 +206,37 @@ public class ElasticsearchService {
                 searchBuilder.source(s -> s.filter(f -> f.includes(sourceFields)));
             }
 
+            // Apply sort options if present
+            applySorts(searchBuilder, esQuery);
+
             SearchRequest searchRequest = searchBuilder.build();
             SearchResponse<Map> response = elasticsearchClient.search(searchRequest, Map.class);
             return convertElasticsearchResponse(response, targetClass, esQuery);
         } catch (Exception e) {
             log.error("Search execution failed for index: {}", indexName, e);
             throw new RuntimeException("Search failed", e);
+        }
+    }
+
+    private void applySorts(SearchRequest.Builder searchBuilder, Map<String, Object> esQuery) {
+        if (!esQuery.containsKey("sort")) return;
+        try {
+            List<Map<String, Object>> sortList = (List<Map<String, Object>>) esQuery.get("sort");
+            for (Map<String, Object> sortSpec : sortList) {
+                if (sortSpec == null || sortSpec.isEmpty()) continue;
+                String field = sortSpec.keySet().iterator().next();
+                Object spec = sortSpec.get(field);
+                String order = "asc";
+                if (spec instanceof Map<?, ?> m) {
+                    Object o = m.get("order");
+                    if (o instanceof String s) order = s;
+                }
+                final String ord = order;
+                searchBuilder.sort(s -> s.field(f -> f.field(field)
+                        .order("desc".equalsIgnoreCase(ord) ? SortOrder.Desc : SortOrder.Asc)));
+            }
+        } catch (Exception e) {
+            log.warn("Failed to apply sort options: {}", e.getMessage());
         }
     }
 
