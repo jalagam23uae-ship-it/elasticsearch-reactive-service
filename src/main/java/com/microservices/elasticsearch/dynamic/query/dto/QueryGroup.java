@@ -25,7 +25,7 @@ public class QueryGroup {
     private List<Map<String, Object>> conditions;
 
     @Valid
-    private List<QueryGroup> groups;
+    private List<Map<String, Object>> groups;
 
     @JsonProperty("nested_path")
     private String nestedPath;

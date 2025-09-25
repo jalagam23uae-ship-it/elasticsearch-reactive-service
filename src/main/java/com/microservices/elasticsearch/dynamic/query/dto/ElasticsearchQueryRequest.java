@@ -12,10 +12,12 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ElasticsearchQueryRequest {
-    @NotNull
-    @Valid
-    private QueryStructureRequest queryStructure;
-    
-    @Valid
-    private QueryAggregationsRequest queryAggregations;
+	@NotNull
+	@Valid
+	private QueryStructureRequest queryStructure;
+
+	@Valid
+	private QueryAggregationsRequest queryAggregations;
+
+
 }

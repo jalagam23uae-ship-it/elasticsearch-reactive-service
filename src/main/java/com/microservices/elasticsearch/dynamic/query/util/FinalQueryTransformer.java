@@ -48,7 +48,7 @@ public class FinalQueryTransformer {
 
         // --- finaloutput root ---
         ObjectNode finalOut = M.createObjectNode();
-        finalOut.put("index_name", indexName);
+        //finalOut.put("index_name", indexName);
 
         // Top-level query object
         ObjectNode query = M.createObjectNode();
@@ -407,7 +407,7 @@ public class FinalQueryTransformer {
                     break;
                 }
                 case "nested": {
-                    value = key; // same as key
+                    value = key.replace(".", "_items.");; // same as key
                     break;
                 }
                 case "join": {

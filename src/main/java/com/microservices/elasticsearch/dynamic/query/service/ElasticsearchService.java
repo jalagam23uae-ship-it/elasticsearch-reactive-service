@@ -44,7 +44,7 @@ public class ElasticsearchService {
 
     private final ElasticsearchClient elasticsearchClient;
     private final ElasticsearchQueryBuilderService queryBuilderService;
-    private final ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper=new ObjectMapper();
     private final ReactiveElasticsearchOperations reactiveElasticsearchOperations;
 
     public <T> Mono<SearchResult<T>> searchAsync(String indexName,
@@ -54,6 +54,7 @@ public class ElasticsearchService {
             log.info("Building Elasticsearch query for index: {}", indexName);
             Map<String, Object> esQuery = queryBuilderService.buildEsQuery(queryRequest);
             log.info("esQuery: {}", esQuery);
+            System.out.println(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(esQuery));
             return executeSearch(indexName, esQuery, targetClass);
         })
         .subscribeOn(Schedulers.boundedElastic())
@@ -69,6 +70,10 @@ public class ElasticsearchService {
             try {
                 log.info("Executing search with virtual thread for index: {}", indexName);
                 Map<String, Object> esQuery = queryBuilderService.buildEsQuery(queryRequest);
+				/*
+				 * log.info("Executing search with virtual thread for esQuery : {}", esQuery);
+				 */
+                System.out.println(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(esQuery));
                 return executeSearch(indexName, esQuery, targetClass);
             } catch (Exception e) {
                 log.error("Virtual thread search failed for index: {}", indexName, e);

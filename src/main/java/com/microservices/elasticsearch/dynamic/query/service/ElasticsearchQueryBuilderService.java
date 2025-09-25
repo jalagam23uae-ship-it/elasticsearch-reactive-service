@@ -201,17 +201,24 @@ public class ElasticsearchQueryBuilderService {
             });
         }
         
-        // Process subgroups
+        // Process subgroups (can also contain condition maps)
         if (group.getGroups() != null) {
-            group.getGroups().forEach(subgroup -> {
-                if (subgroup.getNestedPath() != null) {
-                    clauses.add(groupToEs(subgroup, subgroup.getNestedPath()));
-                } else if (subgroup.getHasChildType() != null) {
-                    clauses.add(groupToEs(subgroup, subgroup.getHasChildType()));
+            for (Map<String, Object> g : group.getGroups()) {
+                if (g == null) continue;
+                if (g.containsKey("field")) {
+                    // Support inputs that place conditions inside "groups"
+                    clauses.add(conditionMapToEs(g));
                 } else {
-                    clauses.add(groupToEs(subgroup, currentNestedPath));
+                    QueryGroup sub = mapToQueryGroup(g);
+                    if (sub.getNestedPath() != null) {
+                        clauses.add(groupToEs(sub, sub.getNestedPath()));
+                    } else if (sub.getHasChildType() != null) {
+                        clauses.add(groupToEs(sub, sub.getHasChildType()));
+                    } else {
+                        clauses.add(groupToEs(sub, currentNestedPath));
+                    }
                 }
-            });
+            }
         }
         
         Map<String, Object> groupQuery = new HashMap<>();
@@ -268,13 +275,10 @@ public class ElasticsearchQueryBuilderService {
             // Keep as raw maps for recursive handling
             builder.conditions((List<Map<String, Object>>) (List<?>) list);
         }
-        // groups
+        // groups (keep as raw maps to support flexible shapes)
         Object grps = map.get("groups");
         if (grps instanceof List<?> list) {
-            builder.groups(((List<?>) list).stream()
-                    .filter(m -> m instanceof Map)
-                    .map(m -> mapToQueryGroup((Map<String, Object>) m))
-                    .toList());
+            builder.groups((List<Map<String, Object>>) (List<?>) list);
         }
         return builder.build();
     }
