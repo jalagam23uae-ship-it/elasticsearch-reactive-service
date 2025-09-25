@@ -1,10 +1,17 @@
 package com.microservices.elasticsearch.dynamic.query.util;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.*;
-
-import java.util.*;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 public class FinalQueryTransformer {
 
@@ -254,7 +261,227 @@ public class FinalQueryTransformer {
     }
 
     // ---------- quick demo ----------
+    
+    
+    
+    public enum FieldRole { ROOT, NESTED, JOIN }
+
+    public record TableRelation(
+            String parentTable,
+            String parentField,
+            String childTable,
+            String childField,
+            String type,      // "nested" | "join" (case-insensitive)
+            long id,
+            String source
+    ) {}
+
+    public record Column(
+            String name,
+            String type,
+            Integer length,
+            boolean nullable
+    ) {}
+
+    // ----- Public API -----
+
+    /**
+     * Build a map of fully-qualified field -> role ("root" | "nested" | "join").
+     * Rules:
+     *  - All columns of every parentTable across relations are marked "root".
+     *  - All columns of each childTable are marked by relation.type ("nested" or "join").
+     *  - Role precedence: root > join > nested (higher precedence overwrites lower).
+     *
+     * @param relations    List of table relations.
+     * @param tableColumns Map: tableName -> list of columns in that table.
+     * @return Map of "table.field" (lowercase) -> "root"/"join"/"nested".
+     */
+    public static Map<String, String> buildFieldRoleMap(
+            List<TableRelation> relations,
+            Map<String, List<Column>> tableColumns
+    ) {
+        // Use LinkedHashMap for stable iteration order.
+        Map<String, FieldRole> typed = buildFieldRoleMapTyped(relations, tableColumns);
+
+        // Convert to requested string roles
+        Map<String, String> out = new LinkedHashMap<>(typed.size());
+        for (var e : typed.entrySet()) {
+            out.put(e.getKey(), switch (e.getValue()) {
+                case ROOT -> "root";
+                case JOIN -> "join";
+                case NESTED -> "nested";
+            });
+        }
+        return out;
+    }
+
+    /**
+     * Same as buildFieldRoleMap but returns typed roles.
+     */
+    public static Map<String, FieldRole> buildFieldRoleMapTyped(
+            List<TableRelation> relations,
+            Map<String, List<Column>> tableColumns
+    ) {
+        Map<String, FieldRole> result = new LinkedHashMap<>();
+
+        // Index tables -> columns with normalized lower-case table/column names
+        Map<String, List<String>> normalizedTableToCols = new HashMap<>();
+        for (var entry : tableColumns.entrySet()) {
+            String tbl = norm(entry.getKey());
+            List<String> cols = entry.getValue() == null ? List.of()
+                    : entry.getValue().stream()
+                            .map(c -> norm(c.name()))
+                            .toList();
+            normalizedTableToCols.put(tbl, cols);
+        }
+
+        // Helper to apply a role to all columns of a table with precedence
+        final var applyRoleToTable = new Object() {
+            void apply(String rawTableName, FieldRole role) {
+                String tbl = norm(rawTableName);
+                List<String> cols = normalizedTableToCols.getOrDefault(tbl, List.of());
+                for (String col : cols) {
+                    String fq = tbl + "." + col;
+                    upsertWithPrecedence(result, fq, role);
+                }
+            }
+        };
+
+        // First pass: mark all parentTable columns as ROOT
+        for (var rel : relations) {
+            applyRoleToTable.apply(rel.parentTable(), FieldRole.ROOT);
+        }
+
+        // Second pass: mark child tables by relation type (JOIN or NESTED)
+        for (var rel : relations) {
+            FieldRole role = roleFromType(rel.type());
+            applyRoleToTable.apply(rel.childTable(), role);
+        }
+
+        return result;
+    }
+
+    // ----- Utilities -----
+    
+    
+    
+
+    private static String norm(String s) {
+        return s == null ? "" : s.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static FieldRole roleFromType(String t) {
+        String x = norm(t);
+        return switch (x) {
+            case "join" -> FieldRole.JOIN;
+            case "nested" -> FieldRole.NESTED;
+            default -> throw new IllegalArgumentException("Unknown relation type: " + t);
+        };
+    }
+
+    // precedence: ROOT(3) > JOIN(2) > NESTED(1)
+    private static final Map<FieldRole, Integer> ROLE_WEIGHT = Map.of(
+            FieldRole.ROOT, 3,
+            FieldRole.JOIN, 2,
+            FieldRole.NESTED, 1
+    );
+
+    private static void upsertWithPrecedence(Map<String, FieldRole> map, String key, FieldRole incoming) {
+        FieldRole existing = map.get(key);
+        if (existing == null || ROLE_WEIGHT.get(incoming) > ROLE_WEIGHT.get(existing)) {
+            map.put(key, incoming);
+        }
+    }
+    
+    public static Map<String, String> transformByRole(Map<String, String> fieldRoleMap) {
+        Map<String, String> out = new LinkedHashMap<>();
+        for (Map.Entry<String, String> e : fieldRoleMap.entrySet()) {
+            String key = e.getKey();
+            String role = e.getValue() == null ? "" : e.getValue().trim().toLowerCase(Locale.ROOT);
+
+            String value;
+            switch (role) {
+                case "root": {
+                    int dot = key.indexOf('.');
+                    value = (dot >= 0 && dot + 1 < key.length()) ? key.substring(dot + 1) : key;
+                    break;
+                }
+                case "nested": {
+                    value = key; // same as key
+                    break;
+                }
+                case "join": {
+                    value = key.replace('.', '#'); // replace '.' with '#'
+                    break;
+                }
+                default:
+                    throw new IllegalArgumentException("Unknown role '" + e.getValue() + "' for key: " + key);
+            }
+            out.put(key, value);
+        }
+        return out;
+    }
+    
+    
+    
     public static void main(String[] args) throws Exception {
+    	
+    	 Map<String, List<Column>> tableColumns = new HashMap<>();
+         tableColumns.put("CUSTOMER_ADDRESSES", List.of(
+                 new Column("ADDRESS_ID", "NUMBER", 22, true),
+                 new Column("CUSTOMER_ID", "NUMBER", 22, true),
+                 new Column("ADDRESS_TYPE", "VARCHAR2", 20, true),
+                 new Column("STREET_ADDRESS", "VARCHAR2", 200, true),
+                 new Column("CITY", "VARCHAR2", 100, true),
+                 new Column("STATE_PROVINCE", "VARCHAR2", 100, true),
+                 new Column("POSTAL_CODE", "VARCHAR2", 20, true),
+                 new Column("COUNTRY", "VARCHAR2", 100, true),
+                 new Column("IS_DEFAULT", "CHAR", 1, true),
+                 new Column("CREATED_DATE", "DATE", 7, true)
+         ));
+         tableColumns.put("CUSTOMER_PREFERENCES", List.of(
+                 new Column("PREFERENCE_ID", "NUMBER", 22, true),
+                 new Column("CUSTOMER_ID", "NUMBER", 22, true),
+                 new Column("PREFERENCE_CATEGORY", "VARCHAR2", 50, true),
+                 new Column("PREFERENCE_KEY", "VARCHAR2", 100, true),
+                 new Column("PREFERENCE_VALUE", "VARCHAR2", 500, true),
+                 new Column("CREATED_DATE", "DATE", 7, true)
+         ));
+         tableColumns.put("CUSTOMERS", List.of(
+                 new Column("CUSTOMER_ID", "NUMBER", 22, false),
+                 new Column("FIRST_NAME", "VARCHAR2", 50, false),
+                 new Column("LAST_NAME", "VARCHAR2", 50, false),
+                 new Column("EMAIL", "VARCHAR2", 100, false),
+                 new Column("PHONE", "VARCHAR2", 20, true),
+                 new Column("DATE_OF_BIRTH", "DATE", 7, true),
+                 new Column("GENDER", "CHAR", 1, true),
+                 new Column("REGISTRATION_DATE", "DATE", 7, true),
+                 new Column("LAST_LOGIN_DATE", "TIMESTAMP(6)", 11, true),
+                 new Column("CUSTOMER_STATUS", "VARCHAR2", 20, true),
+                 new Column("TOTAL_ORDERS", "NUMBER", 22, true),
+                 new Column("TOTAL_SPENT", "NUMBER", 22, true),
+                 new Column("LOYALTY_POINTS", "NUMBER", 22, true),
+                 new Column("PREFERRED_LANGUAGE", "VARCHAR2", 10, true),
+                 new Column("MARKETING_CONSENT", "CHAR", 1, true),
+                 new Column("CREATED_BY", "VARCHAR2", 50, true),
+                 new Column("CREATED_DATE", "DATE", 7, true),
+                 new Column("MODIFIED_BY", "VARCHAR2", 50, true),
+                 new Column("MODIFIED_DATE", "DATE", 7, true)
+         ));
+
+         // Build sample tablerelation (from your JSON)
+         List<TableRelation> relations = List.of(
+                 new TableRelation("CUSTOMERS", "CUSTOMER_ID", "CUSTOMER_ADDRESSES", "CUSTOMER_ID", "nested", 1758626968585L, "manual"),
+                 new TableRelation("CUSTOMERS", "CUSTOMER_ID", "CUSTOMER_PREFERENCES", "CUSTOMER_ID", "nested",   1758627021385L, "manual")
+         );
+
+         Map<String, String> roleMap = buildFieldRoleMap(relations, tableColumns);
+         
+         Map<String, String> finalMap = transformByRole(roleMap);
+         finalMap.forEach((k, v) -> System.out.println(k + " -> " + v));
+         
+         
+    	
         String inputJson = """
         {
           "operator": "OR",
@@ -264,7 +491,8 @@ public class FinalQueryTransformer {
               "customers.first_name": { "value": "test", "op": "match" },
               "customers.gender":     { "value": "M",    "op": "match" },
               "customer_addresses.city": {
-                "type": "multi_value", "operator": "OR", "op": "in",
+                "type": "multi_value",
+                 "operator": "OR", "op": "in",
                 "values": ["New York","Chicago"]
               }
             },
@@ -279,15 +507,9 @@ public class FinalQueryTransformer {
         }
         """;
 
-        Map<String, String> mapping = Map.of(
-            "customers.first_name", "first_name",
-            "customers.gender", "gender",
-            "customer_addresses.city", "customer_addresses.city",
-            "customer_preferences.preference_category", "customer_preferences.preference_category"
-        );
-
+      
         JsonNode input = M.readTree(inputJson);
-        ObjectNode out = transform(input, mapping, "customer_addresses_index_dev2", 0, 10, "desc");
+        ObjectNode out = transform(input, finalMap, "customer_addresses_index_dev2", 0, 10, "desc");
         System.out.println(M.writerWithDefaultPrettyPrinter().writeValueAsString(out));
     }
 }
