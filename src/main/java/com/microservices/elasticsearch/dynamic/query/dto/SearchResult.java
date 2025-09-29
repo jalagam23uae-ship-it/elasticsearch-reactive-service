@@ -7,11 +7,13 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@ToString
 public class SearchResult<T> {
     private List<T> documents;
     private Long totalHits;
@@ -20,4 +22,7 @@ public class SearchResult<T> {
     private Boolean hasMore;
     private Integer currentPage;
     private Integer pageSize;
+    private List<HitEnvelope<T>> results;
+    private boolean success;
+    
 }

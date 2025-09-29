@@ -1,6 +1,5 @@
 # Main Application Configuration
 spring:
-  # Enable virtual threads
   threads:
     virtual:
       enabled: true
@@ -23,8 +22,9 @@ spring:
     uris: ${SPRING_ELASTICSEARCH_URIS:${app.elasticsearch.scheme}://${app.elasticsearch.host}:${app.elasticsearch.port}}
     username: ${SPRING_ELASTICSEARCH_USERNAME:${app.elasticsearch.username}}
     password: ${SPRING_ELASTICSEARCH_PASSWORD:${app.elasticsearch.password}}
+  main:
+    web-application-type: reactive 
 
-# Server configuration
 server:
   port: 8080
 

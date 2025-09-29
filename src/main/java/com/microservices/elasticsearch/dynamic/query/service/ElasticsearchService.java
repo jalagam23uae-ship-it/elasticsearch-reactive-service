@@ -1,20 +1,28 @@
 package com.microservices.elasticsearch.dynamic.query.service;
 
+import java.io.ByteArrayInputStream;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
+import org.springframework.data.elasticsearch.client.elc.NativeQuery;
+import org.springframework.data.elasticsearch.core.ReactiveElasticsearchOperations;
+import org.springframework.data.elasticsearch.core.SearchHit;
+import org.springframework.data.elasticsearch.core.mapping.IndexCoordinates;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microservices.elasticsearch.dynamic.query.dto.ElasticsearchQueryRequest;
 import com.microservices.elasticsearch.dynamic.query.dto.ElasticsearchResponse;
+import com.microservices.elasticsearch.dynamic.query.dto.HitEnvelope;
 import com.microservices.elasticsearch.dynamic.query.dto.SearchResult;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.FieldValue;
+import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.MatchQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
@@ -25,24 +33,18 @@ import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.json.JsonData;
-import co.elastic.clients.elasticsearch._types.SortOrder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-import org.springframework.data.elasticsearch.client.elc.NativeQuery;
-import org.springframework.data.elasticsearch.core.ReactiveElasticsearchOperations;
-import org.springframework.data.elasticsearch.core.SearchHit;
-import org.springframework.data.elasticsearch.core.mapping.IndexCoordinates;
-
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ElasticsearchService {
 
-    private final ElasticsearchClient elasticsearchClient;
+    private  final ElasticsearchClient elasticsearchClient;
     private final ElasticsearchQueryBuilderService queryBuilderService;
     private final ObjectMapper objectMapper=new ObjectMapper();
     private final ReactiveElasticsearchOperations reactiveElasticsearchOperations;
@@ -215,8 +217,21 @@ public class ElasticsearchService {
             applySorts(searchBuilder, esQuery);
 
             SearchRequest searchRequest = searchBuilder.build();
-            SearchResponse<Map> response = elasticsearchClient.search(searchRequest, Map.class);
-            return convertElasticsearchResponse(response, targetClass, esQuery);
+            byte[] body = objectMapper.writeValueAsBytes(esQuery); // esQuery = Map<String,Object> above
+
+            SearchResponse<Map> resp = elasticsearchClient.search(
+                s -> s.index(indexName)
+                      .trackTotalHits(t -> t.enabled(true))
+                      .withJson(new ByteArrayInputStream(body)),
+                Map.class
+            );
+            log.info("total={} took={} hits={}",
+                     resp.hits().total() == null ? null : resp.hits().total().value(),
+                     resp.took(),
+                     resp.hits().hits().size());
+
+            log.info("response:::::::::",resp);
+            return convertElasticsearchResponse(resp, targetClass, esQuery);
         } catch (Exception e) {
             log.error("Search execution failed for index: {}", indexName, e);
             throw new RuntimeException("Search failed", e);
@@ -388,32 +403,44 @@ public class ElasticsearchService {
                                                              Class<T> targetClass,
                                                              Map<String, Object> esQuery) {
         try {
-            List<T> documents = response.hits().hits().stream()
-                    .map(hit -> {
-                        try {
-                            if (targetClass == Map.class) {
-                                return (T) hit.source();
-                            } else {
-                                return objectMapper.convertValue(hit.source(), targetClass);
-                            }
-                        } catch (Exception e) {
-                            log.error("Error converting hit to target class", e);
-                            return null;
-                        }
-                    })
-                    .filter(doc -> doc != null)
-                    .collect(Collectors.toList());
+        	 log.info("Error converting hit to target class", response);
+        	 List<HitEnvelope<T>> wrapped = response.hits().hits().stream()
+        	            .map(hit -> {
+        	                try {
+        	                    T data;
+        	                    Map<String, Object> src = hit.source();
+        	                    if (src == null) return null; // skip if no _source
 
+        	                    if (targetClass == Map.class || targetClass == Object.class) {
+        	                        data = (T) src;
+        	                    } else {
+        	                        data = objectMapper.convertValue(src, targetClass);
+        	                    }
+
+        	                    return HitEnvelope.<T>builder()
+        	                            .id(hit.id())
+        	                            .score(hit.score()) // may be null if scores aren’t tracked
+        	                            .data(data)
+        	                            .build();
+
+        	                } catch (Exception e) {
+        	                    log.error("Error converting hit to target class {}", targetClass, e);
+        	                    return null;
+        	                }
+        	            })
+        	            .filter(Objects::nonNull)
+        	            .collect(Collectors.toList());
+            
             Integer pageSize = (Integer) esQuery.getOrDefault("size", 10);
             Integer from = (Integer) esQuery.getOrDefault("from", 0);
             Integer currentPage = pageSize == 0 ? 0 : from / pageSize;
             long totalHits = response.hits().total() != null ? response.hits().total().value() : 0L;
 
-            return SearchResult.<T>builder()
-                    .documents(documents)
+            return SearchResult.<T>builder().success(Boolean.TRUE)
+                    .results(wrapped)
                     .totalHits(totalHits)
                     .took(response.took())
-                    .hasMore(pageSize != 0 && documents.size() == pageSize && from + pageSize < totalHits)
+                    .hasMore(pageSize != 0 && wrapped.size() == pageSize && from + pageSize < totalHits)
                     .currentPage(currentPage)
                     .pageSize(pageSize)
                     .build();
