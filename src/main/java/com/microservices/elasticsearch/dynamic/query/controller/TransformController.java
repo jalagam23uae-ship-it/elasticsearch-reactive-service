@@ -11,13 +11,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.microservices.elasticsearch.dynamic.query.dto.ElasticsearchQueryRequest;
 import com.microservices.elasticsearch.dynamic.query.dto.SearchResult;
 import com.microservices.elasticsearch.dynamic.query.dto.TransformRequest;
 import com.microservices.elasticsearch.dynamic.query.service.ElasticsearchService;
 import com.microservices.elasticsearch.dynamic.query.service.QueryTransformService;
-import com.microservices.elasticsearch.dynamic.query.util.ItemsKeyNormalizer;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -35,14 +33,11 @@ public class TransformController {
 	@PostMapping("/final-query")
 	public CompletableFuture<ResponseEntity<SearchResult<Map>>> buildFinalQuery(
 			@Valid @RequestBody TransformRequest request) {
-		log.info("Transforming request for mapping: {}", request.getMappingName());
-		log.info("Transforming request for getQuery: {}", request.getQuery());
-		JsonNode query = ItemsKeyNormalizer.normalize(request.getQuery());
-		log.info("Transforming request for query: {}", query);
-		ElasticsearchQueryRequest  out = transformService.buildFinalQuery(request.getMappingName(), query);
+		log.info("Transforming request buildFinalQuery  mapping: {}", request.getMappingName());
+		log.info("Transforming request buildFinalQuery  getQuery: {}", request.getQuery());
+		ElasticsearchQueryRequest out = transformService.buildFinalQuery(request);
 		log.info("Transforming request for out: {}", out);
-		return elasticsearchService
-				.searchWithVirtualThreads(request.getMappingName(), out, Map.class)
+		return elasticsearchService.searchWithVirtualThreads(request.getMappingName(), out, Map.class)
 				.thenApply(ResponseEntity::ok).exceptionally(throwable -> {
 					log.error("Virtual thread search failed for index: {}", request.getMappingName(), throwable);
 					return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();

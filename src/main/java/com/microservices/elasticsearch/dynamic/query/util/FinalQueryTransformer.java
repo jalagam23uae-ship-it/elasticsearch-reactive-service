@@ -111,13 +111,13 @@ public class FinalQueryTransformer {
                                 // AND across values => multiple nested groups, single value each
                                 for (String v : values) {
                                     ObjectNode ng = nestedGroup("AND", target.scope(),
-                                            arrayOf(condition(target.fieldPath(), op, v)));
+                                            arrayOf(conditionv1(target.fieldPath(), op, v)));
                                     groupItems.add(ng);
                                 }
                             } else {
                                 // OR => one nested group with array
                                 ObjectNode ng = nestedGroup("OR", target.scope(),
-                                        arrayOf(condition(target.fieldPath(), op, values)));
+                                        arrayOf(conditionv1(target.fieldPath(), op, values)));
                                 groupItems.add(ng);
                             }
                         }
@@ -228,10 +228,30 @@ public class FinalQueryTransformer {
         n.put("value", singleValue);
         return n;
     }
+    
+    private static ObjectNode conditionv1(String fieldPath, String operator, String singleValue) {
+        ObjectNode n = M.createObjectNode();
+        n.put("field", fieldPath+".keyword");
+        n.put("operator", operator);
+        n.put("value", singleValue);
+        return n;
+    }
 
     private static ObjectNode condition(String fieldPath, String operator, List<String> values) {
         ObjectNode n = M.createObjectNode();
         n.put("field", fieldPath);
+        n.put("operator", operator);
+        ArrayNode arr = M.createArrayNode();
+        for (String v : values) arr.add(v);
+        n.set("value", arr);
+        return n;
+    }
+    
+    
+    
+    private static ObjectNode conditionv1(String fieldPath, String operator, List<String> values) {
+        ObjectNode n = M.createObjectNode();
+        n.put("field", fieldPath+".keyword");
         n.put("operator", operator);
         ArrayNode arr = M.createArrayNode();
         for (String v : values) arr.add(v);
@@ -407,7 +427,7 @@ public class FinalQueryTransformer {
                     break;
                 }
                 case "nested": {
-                    value = key.replace(".", "_items.");; // same as key
+                    value = key.replace(".", "_items."); // same as key
                     break;
                 }
                 case "join": {

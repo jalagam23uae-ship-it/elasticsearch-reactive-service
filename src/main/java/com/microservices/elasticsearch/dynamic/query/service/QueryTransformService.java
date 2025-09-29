@@ -14,7 +14,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.microservices.elasticsearch.dynamic.query.dto.ElasticsearchQueryRequest;
 import com.microservices.elasticsearch.dynamic.query.dto.QueryStructureRequest;
+import com.microservices.elasticsearch.dynamic.query.dto.TransformRequest;
 import com.microservices.elasticsearch.dynamic.query.util.FinalQueryTransformer;
+import com.microservices.elasticsearch.dynamic.query.util.ItemsKeyNormalizer;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,7 +29,9 @@ public class QueryTransformService {
 	private final WorkflowMappingsCache cache;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
-	public ElasticsearchQueryRequest buildFinalQuery(String mappingName, JsonNode inputQuery) {
+	public ElasticsearchQueryRequest buildFinalQuery(TransformRequest request) {
+		JsonNode inputQuery = ItemsKeyNormalizer.normalize(request.getQuery());
+		String mappingName = request.getMappingName();
 		Map<String, Object> mappingRow = cache.get(mappingName);
 		log.info("Transforming request for mappingRow: {}", mappingRow);
 		if (mappingRow == null) {
@@ -38,7 +42,6 @@ public class QueryTransformService {
 			throw new IllegalArgumentException("index_name missing for mapping: " + mappingName);
 		}
 		log.info("Transforming request for indexName: {}", indexName);
-
 		List<FinalQueryTransformer.TableRelation> relations = parseRelations(
 				mappingRow.get(key(mappingRow, "relationships")));
 		log.info("Transforming request for relations: {}", relations);
@@ -50,14 +53,19 @@ public class QueryTransformService {
 		Map<String, String> finalMap = FinalQueryTransformer.transformByRole(roleMap);
 		log.info("Transforming request for finalMap: {}", finalMap);
 		try {
-			ObjectNode out = FinalQueryTransformer.transform(inputQuery, finalMap, indexName, 0, 10, "desc");
+			ObjectNode out = FinalQueryTransformer.transform(inputQuery, finalMap, indexName,
+					request.getPagination().getFrom(), request.getPagination().getSize(), "desc");
 			String requestQuery = objectMapper.writeValueAsString(out);
 			log.info("Transforming request for requestQuery: {}", requestQuery);
 			QueryStructureRequest queryStructureRequest = objectMapper.readValue(requestQuery,
 					QueryStructureRequest.class);
-			 System.out.println(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(out));
-			 
-			ElasticsearchQueryRequest queryRequest = new ElasticsearchQueryRequest(queryStructureRequest, null);
+			ElasticsearchQueryRequest queryRequest = null;
+			if (queryStructureRequest != null) {
+				queryStructureRequest.setSort(request.getSort());
+				queryStructureRequest.setSourceFields(request.getSourceFields());
+				log.info(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(out));
+				queryRequest = new ElasticsearchQueryRequest(queryStructureRequest, null);
+			}
 			return queryRequest;
 		} catch (JsonProcessingException e) {
 			e.printStackTrace();
