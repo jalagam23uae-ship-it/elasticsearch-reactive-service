@@ -209,22 +209,34 @@ public class ElasticsearchService {
             }
 
             if (esQuery.containsKey("_source")) {
-                List<String> sourceFields = (List<String>) esQuery.get("_source");
-                searchBuilder.source(s -> s.filter(f -> f.includes(sourceFields)));
+                Object sourceCfg = esQuery.get("_source");
+                try {
+                    if (sourceCfg instanceof List<?> list) {
+                        List<String> includes = list.stream().map(String::valueOf).toList();
+                        searchBuilder.source(s -> s.filter(f -> f.includes(includes)));
+                    } else if (sourceCfg instanceof Map<?, ?> m) {
+                        Object inc = m.get("includes");
+                        Object exc = m.get("excludes");
+                        List<String> includes = inc instanceof List<?> li ? li.stream().map(String::valueOf).toList() : List.of();
+                        List<String> excludes = exc instanceof List<?> le ? le.stream().map(String::valueOf).toList() : List.of();
+                        searchBuilder.source(s -> s.filter(f -> f.includes(includes).excludes(excludes)));
+                    } else if (sourceCfg instanceof Boolean b) {
+                        boolean fetch = (Boolean) b;
+                        searchBuilder.source(s -> s.fetch(fetch));
+                    } else if (sourceCfg instanceof String s) {
+                        // Single field convenience
+                        searchBuilder.source(sc -> sc.filter(f -> f.includes(s)));
+                    }
+                } catch (Exception ignore) {
+                    // Fallback: ignore malformed _source config
+                }
             }
 
             // Apply sort options if present
             applySorts(searchBuilder, esQuery);
 
             SearchRequest searchRequest = searchBuilder.build();
-            byte[] body = objectMapper.writeValueAsBytes(esQuery); // esQuery = Map<String,Object> above
-
-            SearchResponse<Map> resp = elasticsearchClient.search(
-                s -> s.index(indexName)
-                      .trackTotalHits(t -> t.enabled(true))
-                      .withJson(new ByteArrayInputStream(body)),
-                Map.class
-            );
+            SearchResponse<Map> resp = elasticsearchClient.search(searchRequest, Map.class);
             log.info("total={} took={} hits={}",
                      resp.hits().total() == null ? null : resp.hits().total().value(),
                      resp.took(),

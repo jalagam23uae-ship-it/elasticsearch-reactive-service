@@ -29,9 +29,8 @@ public class QueryTransformService {
 	private final WorkflowMappingsCache cache;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
-	public ElasticsearchQueryRequest buildFinalQuery(TransformRequest request) {
+	public ElasticsearchQueryRequest buildFinalQuery(TransformRequest request,String mappingName) {
 		JsonNode inputQuery = ItemsKeyNormalizer.normalize(request.getQuery());
-		String mappingName = request.getMappingName();
 		Map<String, Object> mappingRow = cache.get(mappingName);
 		log.info("Transforming request for mappingRow: {}", mappingRow);
 		if (mappingRow == null) {
@@ -64,7 +63,7 @@ public class QueryTransformService {
 				queryStructureRequest.setSort(request.getSort());
 				queryStructureRequest.setSourceFields(request.getSourceFields());
 				log.info(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(out));
-				queryRequest = new ElasticsearchQueryRequest(queryStructureRequest, null);
+				queryRequest = new ElasticsearchQueryRequest(queryStructureRequest, null,indexName);
 			}
 			return queryRequest;
 		} catch (JsonProcessingException e) {

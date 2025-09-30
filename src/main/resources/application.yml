@@ -24,6 +24,18 @@ spring:
     password: ${SPRING_ELASTICSEARCH_PASSWORD:${app.elasticsearch.password}}
   main:
     web-application-type: reactive 
+  boot:
+    admin:
+      client:
+        enabled: ${SPRING_BOOT_ADMIN_ENABLED:false}
+        url: ${SPRING_BOOT_ADMIN_URL:}
+        # optional credentials if your Admin server is secured
+        username: ${SPRING_BOOT_ADMIN_USERNAME:}
+        password: ${SPRING_BOOT_ADMIN_PASSWORD:}
+        instance:
+          name: ${SPRING_APPLICATION_NAME:${spring.application.name}}
+          # if the service runs behind a proxy or in Docker, set a reachable URL
+          service-base-url: ${SPRING_BOOT_ADMIN_INSTANCE_URL:}
 
 server:
   port: 8080
@@ -62,15 +74,28 @@ logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 
-# Management endpoints (for monitoring)
+# OpenAPI/Swagger configuration (springdoc)
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+  show-actuator: true
+
+# Actuator configuration
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,loggers,threaddump
+      base-path: /actuator
   endpoint:
     health:
       show-details: always
+
+# Management endpoints (for monitoring)
 
 ---
 # Development profile

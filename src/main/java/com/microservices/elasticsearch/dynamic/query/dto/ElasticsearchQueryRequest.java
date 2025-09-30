@@ -19,5 +19,6 @@ public class ElasticsearchQueryRequest {
 	@Valid
 	private QueryAggregationsRequest queryAggregations;
 
+	private String indexName;
 
 }

@@ -25,6 +25,10 @@ public class SecurityConfig {
       .cors(Customizer.withDefaults())
       .authorizeExchange(exchange -> exchange
         .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+        // OpenAPI and Swagger UI
+        .pathMatchers("/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**").permitAll()
+        // Actuator endpoints
+        .pathMatchers("/actuator/**").permitAll()
         .pathMatchers("/api/**").permitAll()
         .anyExchange().permitAll());
     return http.build();
@@ -36,7 +40,7 @@ public class SecurityConfig {
     config.setAllowedOrigins(List.of("http://localhost:8003","http://192.168.1.179:8003"));
     config.setAllowCredentials(true);
     config.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
-    config.setAllowedHeaders(List.of("Authorization","Content-Type","Accept","Origin","X-Requested-With"));
+    config.setAllowedHeaders(List.of("Authorization","Content-Type","Accept","Origin","X-Requested-With","X-Client-Id"));
     config.setMaxAge(3600L);
 
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

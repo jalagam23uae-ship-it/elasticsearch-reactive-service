@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -23,23 +24,24 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @RestController
-@RequestMapping("/api/transform")
+@RequestMapping("/api/elasticsearch/v1")
 @RequiredArgsConstructor
 public class TransformController {
 
 	private final QueryTransformService transformService;
 	private final ElasticsearchService elasticsearchService;
 
-	@PostMapping("/final-query")
+	@PostMapping("/search")
 	public CompletableFuture<ResponseEntity<SearchResult<Map>>> buildFinalQuery(
-			@Valid @RequestBody TransformRequest request) {
-		log.info("Transforming request buildFinalQuery  mapping: {}", request.getMappingName());
+			@Valid @RequestBody TransformRequest request,@RequestHeader Map<String, String> headers) {
+		String mappingName=headers.get("service_id");
+		log.info("Transforming request buildFinalQuery  mapping: {}", mappingName);
 		log.info("Transforming request buildFinalQuery  getQuery: {}", request.getQuery());
-		ElasticsearchQueryRequest out = transformService.buildFinalQuery(request);
+		ElasticsearchQueryRequest out = transformService.buildFinalQuery(request,mappingName);
 		log.info("Transforming request for out: {}", out);
-		return elasticsearchService.searchWithVirtualThreads(request.getMappingName(), out, Map.class)
+		return elasticsearchService.searchWithVirtualThreads(out.getIndexName(), out, Map.class)
 				.thenApply(ResponseEntity::ok).exceptionally(throwable -> {
-					log.error("Virtual thread search failed for index: {}", request.getMappingName(), throwable);
+					log.error("Virtual thread search failed for index: {}", mappingName, throwable);
 					return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
 				});
 	}
